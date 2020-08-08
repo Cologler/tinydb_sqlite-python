@@ -13,6 +13,8 @@ import json
 
 from tinydb.storages import Storage
 
+from .utils import TrackedMapping
+
 
 class SQLiteTableProxy(MutableMapping):
     SQL_CREATE_TABLE = 'CREATE TABLE IF NOT EXISTS "%s" (key TEXT PRIMARY KEY, type TEXT, value BLOB);'
@@ -114,24 +116,50 @@ class SQLiteStorage(Storage):
 
     def read(self) -> Optional[Dict[str, Dict[str, Any]]]:
         with closing(self._conn.cursor()) as cursor:
-            return self._list_tables(cursor)
+            return TrackedMapping(self._list_tables(cursor))
 
     def write(self, data: Dict[str, Dict[str, Any]]) -> None:
         with closing(self._conn.cursor()) as cursor:
-            tables = self._list_tables(cursor)
-            ek = set(tables)
-            nk = set(data)
+            if isinstance(data, TrackedMapping):
+                data: TrackedMapping
+                for action, args in data.history:
+                    if action == 'setitem':
+                        # update entire table
+                        k, v = args
+                        table = SQLiteTableProxy(self._conn, k)
+                        table.create_table(cursor)
+                        table.overwrite(cursor, v)
 
-            # drop
-            for name in (ek - nk):
-                tables[name].drop_table(cursor)
+                    elif action == 'getitem':
+                        # update entire table
+                        k, v = args, data[k]
+                        table = SQLiteTableProxy(self._conn, k)
+                        table.create_table(cursor)
+                        table.overwrite(cursor, v)
 
-            for name in data:
-                table = tables.get(name)
-                if table is None:
-                    table = SQLiteTableProxy(self._conn, name)
-                    table.create_table(cursor)
-                table.overwrite(cursor, data[name])
+                    elif action == 'delitem':
+                        # drop table
+                        k, = args
+                        table = SQLiteTableProxy(self._conn, k)
+                        table.drop_table(cursor)
+
+                    else:
+                        raise NotImplementedError
+            else:
+                tables = self._list_tables(cursor)
+                ek = set(tables)
+                nk = set(data)
+
+                # drop
+                for name in (ek - nk):
+                    tables[name].drop_table(cursor)
+
+                for name in data:
+                    table = tables.get(name)
+                    if table is None:
+                        table = SQLiteTableProxy(self._conn, name)
+                        table.create_table(cursor)
+                    table.overwrite(cursor, data[name])
 
             self._conn.commit()
 
