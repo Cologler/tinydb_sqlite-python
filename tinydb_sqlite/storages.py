@@ -77,12 +77,12 @@ class SQLiteTableProxy(MutableMapping):
     def __setitem__(self, key, value):
         param = (key, *self._encode_value(value))
         with closing(self._conn.execute(self.SQL_UPSERT_ITEM % self._tablename, param)):
-            self._conn.commit()
+            pass
 
     def __delitem__(self, key):
         param = key,
         with closing(self._conn.execute(self.SQL_DELETE_ITEM % self._tablename, param)):
-            self._conn.commit()
+            pass
 
     def __iter__(self):
         with closing(self._conn.execute(self.SQL_ITER_KEYS % self._tablename)) as cursor:
