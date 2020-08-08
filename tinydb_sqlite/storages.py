@@ -120,6 +120,9 @@ class SQLiteStorage(Storage):
 
     def write(self, data: Dict[str, Dict[str, Any]]) -> None:
         with closing(self._conn.cursor()) as cursor:
+            updated: set
+            deleted: set
+
             if isinstance(data, TrackedMapping):
                 data: TrackedMapping
                 updated = set()
@@ -150,23 +153,19 @@ class SQLiteStorage(Storage):
                     table.create_table(cursor)
                     table.overwrite(cursor, data[k])
 
-                for k in deleted:
-                    SQLiteTableProxy(self._conn, k).drop_table(cursor)
+
             else:
-                tables = self._list_tables(cursor)
-                ek = set(tables)
-                nk = set(data)
+                exists = set(self._list_tables(cursor))
+                updated = set(data)
+                deleted = exists - updated
 
-                # drop
-                for name in (ek - nk):
-                    tables[name].drop_table(cursor)
+            for k in updated:
+                table = SQLiteTableProxy(self._conn, k)
+                table.create_table(cursor)
+                table.overwrite(cursor, data[k])
 
-                for name in data:
-                    table = tables.get(name)
-                    if table is None:
-                        table = SQLiteTableProxy(self._conn, name)
-                        table.create_table(cursor)
-                    table.overwrite(cursor, data[name])
+            for k in deleted:
+                SQLiteTableProxy(self._conn, k).drop_table(cursor)
 
             self._conn.commit()
 
