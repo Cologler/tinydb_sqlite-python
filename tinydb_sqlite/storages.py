@@ -122,29 +122,36 @@ class SQLiteStorage(Storage):
         with closing(self._conn.cursor()) as cursor:
             if isinstance(data, TrackedMapping):
                 data: TrackedMapping
+                updated = set()
+                deleted = set()
+
                 for action, args in data.history:
                     if action == 'setitem':
                         # update entire table
                         k, v = args
-                        table = SQLiteTableProxy(self._conn, k)
-                        table.create_table(cursor)
-                        table.overwrite(cursor, v)
+                        updated.add(k)
 
                     elif action == 'getitem':
                         # update entire table
-                        k, v = args, data[k]
-                        table = SQLiteTableProxy(self._conn, k)
-                        table.create_table(cursor)
-                        table.overwrite(cursor, v)
+                        k, = args
+                        updated.add(k)
 
                     elif action == 'delitem':
                         # drop table
                         k, = args
-                        table = SQLiteTableProxy(self._conn, k)
-                        table.drop_table(cursor)
+                        deleted.add(k)
+                        updated.discard(k)
 
                     else:
                         raise NotImplementedError
+
+                for k in updated:
+                    table = SQLiteTableProxy(self._conn, k)
+                    table.create_table(cursor)
+                    table.overwrite(cursor, data[k])
+
+                for k in deleted:
+                    SQLiteTableProxy(self._conn, k).drop_table(cursor)
             else:
                 tables = self._list_tables(cursor)
                 ek = set(tables)
