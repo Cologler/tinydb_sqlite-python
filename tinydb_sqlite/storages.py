@@ -38,7 +38,8 @@ class SQLiteTableProxy(MutableMapping):
 
     def overwrite(self, cursor: Cursor, data: Dict[str, Any]):
         # remove
-        cursor.executemany(self.SQL_DELETE_ITEM % self._tablename, set(self) - set(data))
+        params = [(k,) for k in (set(self) - set(data))]
+        cursor.executemany(self.SQL_DELETE_ITEM % self._tablename, params)
 
         # update
         params = []
