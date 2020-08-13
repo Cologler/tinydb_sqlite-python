@@ -6,7 +6,7 @@
 # ----------
 
 from typing import *
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, ItemsView, ValuesView
 from sqlite3 import Connection, connect, Cursor
 from contextlib import closing
 import json
@@ -49,10 +49,17 @@ class SQLiteTableProxy(MutableMapping):
     def drop_table(self, cursor: Cursor):
         cursor.execute(self.SQL_DROP_TABLE % self._tablename)
 
+    def iter_raw(self, cursor: Cursor) -> Tuple[str, str, Any]:
+        cursor.execute(self.SQL_ITER_ROWS % self._tablename)
+        yield from cursor
+
+    def iter_items_decoded(self, cursor: Cursor, encode=True) -> Tuple[str, Any]:
+        for k, t, v in self.iter_raw(cursor):
+            yield k, self._decode_value(t, v)
+
     def overwrite(self, cursor: Cursor, data: Dict[str, Any]):
         # fetch
-        cursor.execute(self.SQL_ITER_ROWS % self._tablename)
-        data_indb = dict((i[0], i[1:]) for i in cursor)
+        data_indb = dict((i[0], i[1:]) for i in self.iter_raw(cursor))
 
         # remove
         params = [(k,) for k in (set(data_indb) - set(data))]
@@ -108,6 +115,33 @@ class SQLiteTableProxy(MutableMapping):
         with closing(self._conn.execute(self.SQL_COUNT % self._tablename)) as cursor:
             v, = cursor.fetchone()
             return v
+
+    def items(self):
+        return SQLiteTableProxyItemsView(self)
+
+    def values(self):
+        return SQLiteTableProxyValuesView(self)
+
+
+class SQLiteTableProxyItemsView(ItemsView):
+    @property
+    def _conn(self):
+        return self._mapping._conn
+
+    def __iter__(self):
+        with closing(self._conn.cursor()) as cursor:
+            yield from self._mapping.iter_items_decoded(cursor)
+
+
+class SQLiteTableProxyValuesView(ValuesView):
+    @property
+    def _conn(self):
+        return self._mapping._conn
+
+    def __iter__(self):
+        with closing(self._conn.cursor()) as cursor:
+            for _, value in self._mapping.iter_items_decoded(cursor):
+                yield value
 
 
 class SQLiteStorage(Storage):
