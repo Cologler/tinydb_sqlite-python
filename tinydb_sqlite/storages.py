@@ -15,6 +15,18 @@ from tinydb.storages import Storage
 
 from .utils import TrackedMapping
 
+_TYPES_MAPPING = {
+    (type(None),    ''),
+    (bool,          '?'),
+    (int,           'i'),
+    (float,         'f'),
+    (str,           's'),
+    (bytes,         'b'),
+}
+_T2V = dict(_TYPES_MAPPING)
+_V2T = dict(reversed(x) for x in _TYPES_MAPPING)
+assert len(_T2V) == len(_V2T)
+
 
 class SQLiteTableProxy(MutableMapping):
     SQL_CREATE_TABLE = 'CREATE TABLE IF NOT EXISTS "%s" (key TEXT PRIMARY KEY, type TEXT, value BLOB);'
@@ -22,6 +34,7 @@ class SQLiteTableProxy(MutableMapping):
     SQL_UPSERT_ITEM = 'INSERT OR REPLACE INTO %s VALUES (?, ?, ?);'
     SQL_DELETE_ITEM = 'DELETE FROM %s WHERE key=?;'
     SQL_ITER_KEYS = 'SELECT key FROM %s;'
+    SQL_ITER_ROWS = 'SELECT key, type, value FROM %s;'
     SQL_GET_VALUE = 'SELECT type, value FROM %s WHERE key=?;'
     SQL_COUNT = 'SELECT COUNT(*) FROM %s'
 
@@ -37,40 +50,39 @@ class SQLiteTableProxy(MutableMapping):
         cursor.execute(self.SQL_DROP_TABLE % self._tablename)
 
     def overwrite(self, cursor: Cursor, data: Dict[str, Any]):
+        # fetch
+        cursor.execute(self.SQL_ITER_ROWS % self._tablename)
+        data_indb = dict((i[0], i[1:]) for i in cursor)
+
         # remove
-        params = [(k,) for k in (set(self) - set(data))]
+        params = [(k,) for k in (set(data_indb) - set(data))]
         cursor.executemany(self.SQL_DELETE_ITEM % self._tablename, params)
 
         # update
         params = []
         for k, v in data.items():
-            params.append((k, *self._encode_value(v)))
+            encode_value = self._encode_value(v)
+            if encode_value != data_indb.get(k):
+                params.append((k, *encode_value))
         cursor.executemany(self.SQL_UPSERT_ITEM % self._tablename, params)
 
-    def _decode_value(self, type_: str, value):
-        if type_ == 'null':
-            return None
-        if type_ == 'bool':
-            return bool(value)
-        if type_ == 'int':
-            return int(value)
-        if type_ == 'float':
-            return float(value)
-        if type_ == 'str':
-            return str(value)
-        if type_ == 'bytes':
-            return bytes(value)
-        if type_ == 'json':
+    def _decode_value(self, type_id: str, value):
+        type_ = _V2T.get(type_id)
+        if type_ is not None:
+            if type_ is type(None):
+                return None # type(None)() takes no arguments
+            else:
+                return type_(value)
+        if type_ == 'j':
             return json.loads(value)
         raise NotImplementedError
 
     def _encode_value(self, value) -> Tuple[str, Any]:
-        if value is None:
-            return 'null', None
         type_ = type(value)
-        if type_ in (bool, int, float, str, bytes):
-            return type_.__name__, value
-        return 'json', json.dumps(value, ensure_ascii=False)
+        type_id = _T2V.get(type_)
+        if type_id is not None:
+            return type_id, value
+        return 'j', json.dumps(value, ensure_ascii=False)
 
     def __getitem__(self, key):
         with closing(self._conn.execute(self.SQL_GET_VALUE % self._tablename, (key, ))) as cursor:
