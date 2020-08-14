@@ -5,6 +5,7 @@ description = ""
 authors = ["Cologler <skyoflw@gmail.com>"]
 license = "MIT"
 readme = 'README.md'
+homepage = 'https://github.com/Cologler/tinydb_sqlite-python'
 
 [tool.poetry.dependencies]
 python = "^3.8"
