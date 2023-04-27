@@ -12,7 +12,7 @@ def open_memorydb():
     return TinyDB(storage=SQLiteStorage, connection=':memory:')
 
 def test_do_notthing():
-    with open_memorydb() as db:
+    with open_memorydb():
         pass
 
 def test_empty():

@@ -5,7 +5,6 @@
 #
 # ----------
 
-from typing import *
 from collections.abc import MutableMapping
 
 class TrackedMapping(MutableMapping):

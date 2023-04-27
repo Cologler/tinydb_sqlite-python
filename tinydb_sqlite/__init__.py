@@ -6,3 +6,5 @@
 # ----------
 
 from .storages import SQLiteStorage
+
+__all__ = ['SQLiteStorage']
