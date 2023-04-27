@@ -5,7 +5,7 @@
 #
 # ----------
 
-from typing import *
+from typing import Any, Tuple, Dict, Optional
 from collections.abc import MutableMapping, ItemsView, ValuesView
 from sqlite3 import Connection, connect, Cursor
 from contextlib import closing
@@ -80,9 +80,9 @@ class SQLiteTableProxy(MutableMapping):
                 return None # type(None)() takes no arguments
             else:
                 return type_(value)
-        if type_ == 'j':
+        if type_id == 'j':
             return json.loads(value)
-        raise NotImplementedError
+        raise NotImplementedError(type_id, value)
 
     def _encode_value(self, value) -> Tuple[str, Any]:
         type_ = type(value)
