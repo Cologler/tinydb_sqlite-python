@@ -27,6 +27,23 @@ _T2V = dict(_TYPES_MAPPING)
 _V2T = dict(reversed(x) for x in _TYPES_MAPPING)
 assert len(_T2V) == len(_V2T)
 
+def decode_value(type_id: str, value):
+    type_ = _V2T.get(type_id)
+    if type_ is not None:
+        if type_ is type(None):
+            return None # type(None)() takes no arguments
+        else:
+            return type_(value)
+    if type_id == 'j':
+        return json.loads(value)
+    raise NotImplementedError(type_id, value)
+
+def encode_value(value) -> Tuple[str, Any]:
+    type_ = type(value)
+    type_id = _T2V.get(type_)
+    if type_id is not None:
+        return type_id, value
+    return 'j', json.dumps(value, ensure_ascii=False)
 
 class SQLiteTableProxy(MutableMapping):
     SQL_CREATE_TABLE = 'CREATE TABLE IF NOT EXISTS "%s" (key TEXT PRIMARY KEY, type TEXT, value BLOB);'
@@ -55,7 +72,7 @@ class SQLiteTableProxy(MutableMapping):
 
     def iter_items_decoded(self, cursor: Cursor, encode=True) -> Tuple[str, Any]:
         for k, t, v in self.iter_raw(cursor):
-            yield k, self._decode_value(t, v)
+            yield k, decode_value(t, v)
 
     def overwrite(self, cursor: Cursor, data: Dict[str, Any]):
         # fetch
@@ -68,36 +85,18 @@ class SQLiteTableProxy(MutableMapping):
         # update
         params = []
         for k, v in data.items():
-            encode_value = self._encode_value(v)
-            if encode_value != data_indb.get(k):
-                params.append((k, *encode_value))
+            encoded_value = encode_value(v)
+            if encoded_value != data_indb.get(k):
+                params.append((k, *encoded_value))
         cursor.executemany(self.SQL_UPSERT_ITEM % self._tablename, params)
-
-    def _decode_value(self, type_id: str, value):
-        type_ = _V2T.get(type_id)
-        if type_ is not None:
-            if type_ is type(None):
-                return None # type(None)() takes no arguments
-            else:
-                return type_(value)
-        if type_id == 'j':
-            return json.loads(value)
-        raise NotImplementedError(type_id, value)
-
-    def _encode_value(self, value) -> Tuple[str, Any]:
-        type_ = type(value)
-        type_id = _T2V.get(type_)
-        if type_id is not None:
-            return type_id, value
-        return 'j', json.dumps(value, ensure_ascii=False)
 
     def __getitem__(self, key):
         with closing(self._conn.execute(self.SQL_GET_VALUE % self._tablename, (key, ))) as cursor:
             t, v = cursor.fetchone()
-            return self._decode_value(t, v)
+            return decode_value(t, v)
 
     def __setitem__(self, key, value):
-        param = (key, *self._encode_value(value))
+        param = (key, *encode_value(value))
         with closing(self._conn.execute(self.SQL_UPSERT_ITEM % self._tablename, param)):
             pass
 
