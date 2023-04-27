@@ -60,14 +60,21 @@ class SQLiteTableProxy(MutableMapping):
         self._conn = connection
         self._tablename = tablename
 
+        # format sql
+        for sql_name in dir(type(self)):
+            if sql_name.startswith('SQL_'):
+                sql_raw = getattr(self, sql_name)
+                assert isinstance(sql_raw, str)
+                setattr(self, sql_name, sql_raw % self._tablename)
+
     def create_table(self, cursor: Cursor):
-        cursor.execute(self.SQL_CREATE_TABLE % self._tablename)
+        cursor.execute(self.SQL_CREATE_TABLE)
 
     def drop_table(self, cursor: Cursor):
-        cursor.execute(self.SQL_DROP_TABLE % self._tablename)
+        cursor.execute(self.SQL_DROP_TABLE)
 
     def iter_raw(self, cursor: Cursor) -> Tuple[str, str, Any]:
-        cursor.execute(self.SQL_ITER_ROWS % self._tablename)
+        cursor.execute(self.SQL_ITER_ROWS)
         yield from cursor
 
     def iter_items_decoded(self, cursor: Cursor, encode=True) -> Tuple[str, Any]:
@@ -80,7 +87,7 @@ class SQLiteTableProxy(MutableMapping):
 
         # remove
         params = [(k,) for k in (set(data_indb) - set(data))]
-        cursor.executemany(self.SQL_DELETE_ITEM % self._tablename, params)
+        cursor.executemany(self.SQL_DELETE_ITEM, params)
 
         # update
         params = []
@@ -88,30 +95,30 @@ class SQLiteTableProxy(MutableMapping):
             encoded_value = encode_value(v)
             if encoded_value != data_indb.get(k):
                 params.append((k, *encoded_value))
-        cursor.executemany(self.SQL_UPSERT_ITEM % self._tablename, params)
+        cursor.executemany(self.SQL_UPSERT_ITEM, params)
 
     def __getitem__(self, key):
-        with closing(self._conn.execute(self.SQL_GET_VALUE % self._tablename, (key, ))) as cursor:
+        with closing(self._conn.execute(self.SQL_GET_VALUE, (key, ))) as cursor:
             t, v = cursor.fetchone()
             return decode_value(t, v)
 
     def __setitem__(self, key, value):
         param = (key, *encode_value(value))
-        with closing(self._conn.execute(self.SQL_UPSERT_ITEM % self._tablename, param)):
+        with closing(self._conn.execute(self.SQL_UPSERT_ITEM, param)):
             pass
 
     def __delitem__(self, key):
         param = key,
-        with closing(self._conn.execute(self.SQL_DELETE_ITEM % self._tablename, param)):
+        with closing(self._conn.execute(self.SQL_DELETE_ITEM, param)):
             pass
 
     def __iter__(self):
-        with closing(self._conn.execute(self.SQL_ITER_KEYS % self._tablename)) as cursor:
+        with closing(self._conn.execute(self.SQL_ITER_KEYS)) as cursor:
             for k, in cursor:
                 yield k
 
     def __len__(self):
-        with closing(self._conn.execute(self.SQL_COUNT % self._tablename)) as cursor:
+        with closing(self._conn.execute(self.SQL_COUNT)) as cursor:
             v, = cursor.fetchone()
             return v
 
